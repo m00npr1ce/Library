@@ -1,57 +1,129 @@
-﻿using System.Text;
+﻿using System.Linq;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 using Microsoft.EntityFrameworkCore;
 
 namespace Library
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
-    
     public partial class MainWindow : Window
     {
-        public void DisplayData()
-        {
-            using var context = new LibraryContext();
-
-            var books = context.Books
-                                .Include(b => b.AuthorNavigation)
-                                .Include(b => b.GenreNavigation)
-                                .ToList();
-
-            StringBuilder sb = new StringBuilder();
-
-            sb.AppendLine("Books in the Library:");
-            foreach (var book in books)
-            {
-                sb.AppendLine($"Title: {book.Title}, ISBN: {book.Isbn}, Author: {book.AuthorNavigation.FirstName} {book.AuthorNavigation.LastName}, Genre: {book.GenreNavigation.Name}");
-            }
-
-            // Выводим в TextBox
-            OutputTextBox.Text = sb.ToString();
-        }
+        private LibraryContext _context;
 
         public MainWindow()
         {
             InitializeComponent();
+            _context = new LibraryContext();
 
-            // Добавляем данные в базу данных
-            using (var context = new LibraryContext())
+            LoadBooks();
+            LoadAuthors();
+            LoadGenres();
+        }
+
+        // Загрузка данных для отображения в DataGrid
+        private void LoadBooks()
+        {
+            var books = _context.Books
+                .Include(b => b.AuthorNavigation)
+                .Include(b => b.GenreNavigation)
+                .ToList();
+
+            BooksDataGrid.ItemsSource = books;
+        }
+
+        // Загрузка списка авторов для фильтра
+        private void LoadAuthors()
+        {
+            var authors = _context.Authors.ToList();
+            AuthorFilterComboBox.ItemsSource = authors;
+            AuthorFilterComboBox.DisplayMemberPath = "FullName";
+        }
+
+        // Загрузка списка жанров для фильтра
+        private void LoadGenres()
+        {
+            var genres = _context.Genres.ToList();
+            GenreFilterComboBox.ItemsSource = genres;
+            GenreFilterComboBox.DisplayMemberPath = "Name";
+        }
+
+        // Кнопка поиска
+        private void SearchButton_Click(object sender, RoutedEventArgs e)
+        {
+            var query = _context.Books.Include(b => b.AuthorNavigation) // Загружаем автора
+                                       .Include(b => b.GenreNavigation) // Загружаем жанр
+                                       .AsQueryable();
+
+            // Фильтрация по автору
+            if (AuthorFilterComboBox.SelectedItem is Author selectedAuthor)
             {
-                context.AddDataToDatabase();  // Добавление данных в базу
+                query = query.Where(b => b.AuthorNavigation.Id == selectedAuthor.Id);
             }
 
-            // Выводим данные на экран
-            DisplayData();
+            // Фильтрация по жанру
+            if (GenreFilterComboBox.SelectedItem is Genre selectedGenre)
+            {
+                query = query.Where(b => b.GenreNavigation.Id == selectedGenre.Id);
+            }
+
+            // Поиск по названию (игнорируем регистр)
+            if (!string.IsNullOrEmpty(SearchTextBox.Text))
+            {
+                query = query.Where(b => b.Title.ToLower().Contains(SearchTextBox.Text.ToLower()));
+            }
+
+            // Принудительное обновление DataGrid
+            BooksDataGrid.ItemsSource = null;
+            BooksDataGrid.ItemsSource = query.ToList();
+        }
+
+
+        // Кнопка добавления книги
+        private void AddBookButton_Click(object sender, RoutedEventArgs e)
+        {
+            var bookWindow = new BookWindow(_context);
+            if (bookWindow.ShowDialog() == true)
+            {
+                LoadBooks(); // Перезагружаем данные после добавления книги
+            }
+        }
+
+        // Кнопка редактирования книги
+        private void EditBookButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (BooksDataGrid.SelectedItem is Book selectedBook)
+            {
+                var bookWindow = new BookWindow(_context, selectedBook);
+                if (bookWindow.ShowDialog() == true)
+                {
+                    LoadBooks(); // Обновляем данные после редактирования
+                }
+            }
+        }
+
+        // Кнопка удаления книги
+        private void DeleteBookButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (BooksDataGrid.SelectedItem is Book selectedBook)
+            {
+                _context.Books.Remove(selectedBook);
+                _context.SaveChanges();
+                LoadBooks();  // Обновляем список книг после удаления
+            }
+        }
+
+        // Кнопка управления авторами
+        private void ManageAuthorsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var authorsWindow = new ManageAuthorsWindow();
+            authorsWindow.ShowDialog();
+            LoadBooks();
+        }
+
+        // Кнопка управления жанрами
+        private void ManageGenresButton_Click(object sender, RoutedEventArgs e)
+        {
+            var genresWindow = new ManageGenresWindow();
+            genresWindow.ShowDialog();
+            LoadBooks();
         }
     }
-
 }
